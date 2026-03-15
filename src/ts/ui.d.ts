@@ -1,0 +1,14 @@
+import type { PipelineStep, PipelineState } from './types.js';
+import type { CalcResult } from './calculator.js';
+export declare function setPipelineStep(step: PipelineStep, state: PipelineState): void;
+export declare function resetPipeline(): void;
+export declare function completePipeline(): void;
+export declare function addUserMessage(text: string): void;
+export declare function addBotMessage(text: string): void;
+export declare function addThinkingIndicator(label: string): void;
+export declare function removeThinkingIndicator(): void;
+export declare function addToolCard(results: CalcResult[]): void;
+export declare function addErrorMessage(msg: string): void;
+export declare function updateStats(calls: number, calcs: number, questions: number): void;
+export declare function autoResizeTextarea(el: HTMLTextAreaElement): void;
+export declare function setSendButtonState(enabled: boolean): void;

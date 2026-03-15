@@ -1,0 +1,28 @@
+{
+  "name": "chatbot-2",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+     "dev": "concurrently \"npx tailwindcss -i ./src/input.css -o ./dist/output.css --watch\" \"npx tsc --watch\" \"npx live-server src --port=3000 --open=index.html\"",
+    "build": "npx tailwindcss -i ./src/input.css -o ./dist/output.css --minify && npx tsc",
+    "tw": "npx tailwindcss -i ./src/input.css -o ./dist/output.css --watch",
+    "tsc": "npx tsc --watch"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@tailwindcss/cli": "^4.2.1"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "concurrently": "^9.2.1",
+    "jest": "^30.3.0",
+    "live-server": "^1.2.2",
+    "tailwindcss": "^4.2.1",
+    "ts-jest": "^29.4.6",
+    "typescript": "^5.9.3"
+  }
+}
