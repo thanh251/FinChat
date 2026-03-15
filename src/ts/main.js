@@ -11,28 +11,70 @@ import { setPipelineStep, resetPipeline, completePipeline, addUserMessage, addBo
 // APP STATE
 // ═══════════════════════════════════════════
 const state = {
-    provider: 'claude', // cố định Claude
+    provider: 'gemini', // dùng Gemini
     apiKey: '',
-    model: 'claude-sonnet-4-20250514', // cố định model
+    model: 'gemini-2.5-flash', // model Gemini
     totalCalls: 0,
     totalCalcs: 0,
     totalQuestions: 0,
     excelData: null,
     isLoading: false,
 };
+// Trạng thái API key đã được xác nhận bằng Enter chưa
+let apiKeyConfirmed = false;
 // ═══════════════════════════════════════════
-// API KEY VALIDATION
+// API KEY — validate + xác nhận bằng Enter
 // ═══════════════════════════════════════════
-function checkReady() {
-    const key = state.apiKey;
-    const valid = key.length > 20 && key.startsWith('sk-ant-');
+function isValidKey(key) {
+    // Gemini key bắt đầu bằng AIza
+    return key.length > 20 && key.startsWith('AIza');
+}
+function updateApiKeyUI(confirmed, valid) {
+    const wrap = document.getElementById('api-key-wrap');
     const dot = document.getElementById('status-dot');
-    if (dot) {
-        dot.className =
-            'w-2 h-2 rounded-full transition-all duration-300 ' +
-                (valid ? 'bg-emerald-400 shadow-sm shadow-emerald-300' : 'bg-slate-300');
+    const hint = document.getElementById('api-hint');
+    if (!wrap || !dot || !hint)
+        return;
+    if (confirmed && valid) {
+        // Đã xác nhận — hiển thị trạng thái xanh lá
+        wrap.classList.add('api-confirmed');
+        dot.className = 'w-2 h-2 rounded-full transition-all duration-300 flex-shrink-0 bg-emerald-400 shadow-sm shadow-emerald-300';
+        hint.textContent = '✓ Đã xác nhận';
+        hint.className = 'text-xs font-mono text-emerald-500 whitespace-nowrap';
     }
-    setSendButtonState(valid && !state.isLoading);
+    else if (valid && !confirmed) {
+        // Đã nhập đúng format nhưng chưa Enter
+        wrap.classList.remove('api-confirmed');
+        dot.className = 'w-2 h-2 rounded-full transition-all duration-300 flex-shrink-0 bg-amber-400';
+        hint.textContent = '↵ Enter để xác nhận';
+        hint.className = 'text-xs font-mono text-amber-400 whitespace-nowrap';
+    }
+    else {
+        // Chưa nhập hoặc sai format
+        wrap.classList.remove('api-confirmed');
+        dot.className = 'w-2 h-2 rounded-full transition-all duration-300 flex-shrink-0 bg-slate-300';
+        hint.textContent = '↵';
+        hint.className = 'text-xs font-mono text-blue-200 whitespace-nowrap';
+    }
+    setSendButtonState(confirmed && valid && !state.isLoading);
+}
+function confirmApiKey() {
+    const key = state.apiKey;
+    if (isValidKey(key)) {
+        apiKeyConfirmed = true;
+        updateApiKeyUI(true, true);
+        // Focus vào ô câu hỏi sau khi xác nhận
+        const questionInput = document.getElementById('question-input');
+        questionInput?.focus();
+    }
+    else {
+        apiKeyConfirmed = false;
+        updateApiKeyUI(false, false);
+        // Shake animation báo lỗi
+        const wrap = document.getElementById('api-key-wrap');
+        wrap?.classList.add('border-red-300');
+        setTimeout(() => wrap?.classList.remove('border-red-300'), 1000);
+    }
 }
 // ═══════════════════════════════════════════
 // EXCEL HANDLING
@@ -59,6 +101,11 @@ function initExcelHandlers() {
         const file = fileInput.files?.[0];
         if (file)
             processFile(file);
+    });
+    // Nút xóa file Excel
+    document.getElementById('clear-excel-btn')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        clearExcel();
     });
 }
 function processFile(file) {
@@ -124,11 +171,9 @@ function clearExcel() {
     document.getElementById('excel-input').value = '';
     document.getElementById('drop-zone').innerHTML = `
     <div class="text-2xl mb-1">📊</div>
-    <p class="text-xs text-blue-500 font-medium">Tải file Excel lên</p>
+    <p class="text-xs text-blue-500 font-medium">Kéo thả hoặc nhấn để tải file</p>
     <p class="text-xs text-blue-300 mt-0.5">.xlsx · .xls · .csv</p>`;
 }
-// Expose clearExcel globally cho onclick handler trong HTML
-window.clearExcel = clearExcel;
 // ═══════════════════════════════════════════
 // SEND MESSAGE — MAIN PIPELINE
 // ═══════════════════════════════════════════
@@ -171,7 +216,7 @@ async function sendMessage() {
     try {
         let messages = [{ role: 'user', content: userPrompt }];
         let finalAnswer = '';
-        let allCalcResults = [];
+        const allCalcResults = [];
         let iterations = 0;
         while (iterations < 5) {
             iterations++;
@@ -184,7 +229,6 @@ async function sendMessage() {
                 removeThinkingIndicator();
                 setPipelineStep(2, 'active');
                 setPipelineStep(3, 'active');
-                // Tính toán bằng JS
                 const toolResults = [];
                 const newCalcResults = [];
                 for (const tc of response.toolCalls) {
@@ -207,7 +251,7 @@ async function sendMessage() {
                 if (newCalcResults.length > 0) {
                     addToolCard(newCalcResults);
                 }
-                // Build messages cho vòng lặp tiếp theo — khác nhau theo provider
+                // Build messages cho vòng lặp tiếp theo
                 if (state.provider === 'claude') {
                     messages = buildClaudeMessagesWithResults(userPrompt, response.rawContent, toolResults);
                 }
@@ -215,7 +259,6 @@ async function sendMessage() {
                     messages = buildGeminiMessagesWithResults(userPrompt, response.toolCalls, toolResults);
                 }
                 else {
-                    // OpenAI — gộp lại thành string đơn giản
                     const resultSummary = toolResults
                         .map((tr, i) => `${response.toolCalls[i]?.equation}: ${tr.result}`)
                         .join(', ');
@@ -244,7 +287,8 @@ async function sendMessage() {
         addErrorMessage(err instanceof Error ? err.message : 'Lỗi không xác định');
     }
     state.isLoading = false;
-    checkReady();
+    // Khôi phục trạng thái nút gửi
+    setSendButtonState(apiKeyConfirmed && isValidKey(state.apiKey) && !state.isLoading);
 }
 // ═══════════════════════════════════════════
 // INIT
@@ -253,9 +297,18 @@ document.addEventListener('DOMContentLoaded', () => {
     initExcelHandlers();
     // API key input
     const apiKeyInput = document.getElementById('api-key');
+    // Gõ phím → update state + UI (chưa xác nhận)
     apiKeyInput.addEventListener('input', () => {
         state.apiKey = apiKeyInput.value.trim();
-        checkReady();
+        apiKeyConfirmed = false;
+        updateApiKeyUI(false, isValidKey(state.apiKey));
+    });
+    // Nhấn Enter → xác nhận API key
+    apiKeyInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            confirmApiKey();
+        }
     });
     // Question textarea
     const questionInput = document.getElementById('question-input');

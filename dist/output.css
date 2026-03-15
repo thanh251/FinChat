@@ -470,9 +470,6 @@
   .border-blue-300 {
     border-color: var(--color-blue-300);
   }
-  .border-blue-600 {
-    border-color: var(--color-blue-600);
-  }
   .border-emerald-200 {
     border-color: var(--color-emerald-200);
   }
@@ -527,9 +524,6 @@
     --tw-gradient-to: var(--color-blue-700);
     --tw-gradient-stops: var(--tw-gradient-via-stops, var(--tw-gradient-position), var(--tw-gradient-from) var(--tw-gradient-from-position), var(--tw-gradient-to) var(--tw-gradient-to-position));
   }
-  .p-1 {
-    padding: calc(var(--spacing) * 1);
-  }
   .p-3 {
     padding: calc(var(--spacing) * 3);
   }
@@ -559,9 +553,6 @@
   }
   .py-1 {
     padding-block: calc(var(--spacing) * 1);
-  }
-  .py-1\.5 {
-    padding-block: calc(var(--spacing) * 1.5);
   }
   .py-2 {
     padding-block: calc(var(--spacing) * 2);

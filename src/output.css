@@ -9,9 +9,11 @@
       "Courier New", monospace;
     --color-red-50: oklch(97.1% 0.013 17.38);
     --color-red-200: oklch(88.5% 0.062 18.334);
+    --color-red-300: oklch(80.8% 0.114 19.571);
     --color-red-400: oklch(70.4% 0.191 22.216);
     --color-red-600: oklch(57.7% 0.245 27.325);
     --color-amber-50: oklch(98.7% 0.022 95.277);
+    --color-amber-400: oklch(82.8% 0.189 84.429);
     --color-amber-600: oklch(66.6% 0.179 58.318);
     --color-emerald-50: oklch(97.9% 0.021 166.113);
     --color-emerald-100: oklch(95% 0.052 163.051);
@@ -322,8 +324,8 @@
   .w-16 {
     width: calc(var(--spacing) * 16);
   }
-  .w-44 {
-    width: calc(var(--spacing) * 44);
+  .w-48 {
+    width: calc(var(--spacing) * 48);
   }
   .w-72 {
     width: calc(var(--spacing) * 72);
@@ -470,17 +472,20 @@
   .border-blue-300 {
     border-color: var(--color-blue-300);
   }
-  .border-blue-600 {
-    border-color: var(--color-blue-600);
-  }
   .border-emerald-200 {
     border-color: var(--color-emerald-200);
   }
   .border-red-200 {
     border-color: var(--color-red-200);
   }
+  .border-red-300 {
+    border-color: var(--color-red-300);
+  }
   .bg-amber-50 {
     background-color: var(--color-amber-50);
+  }
+  .bg-amber-400 {
+    background-color: var(--color-amber-400);
   }
   .bg-blue-50 {
     background-color: var(--color-blue-50);
@@ -527,9 +532,6 @@
     --tw-gradient-to: var(--color-blue-700);
     --tw-gradient-stops: var(--tw-gradient-via-stops, var(--tw-gradient-position), var(--tw-gradient-from) var(--tw-gradient-from-position), var(--tw-gradient-to) var(--tw-gradient-to-position));
   }
-  .p-1 {
-    padding: calc(var(--spacing) * 1);
-  }
   .p-3 {
     padding: calc(var(--spacing) * 3);
   }
@@ -559,9 +561,6 @@
   }
   .py-1 {
     padding-block: calc(var(--spacing) * 1);
-  }
-  .py-1\.5 {
-    padding-block: calc(var(--spacing) * 1.5);
   }
   .py-2 {
     padding-block: calc(var(--spacing) * 2);
@@ -643,6 +642,9 @@
   }
   .whitespace-nowrap {
     white-space: nowrap;
+  }
+  .text-amber-400 {
+    color: var(--color-amber-400);
   }
   .text-amber-600 {
     color: var(--color-amber-600);
@@ -735,6 +737,10 @@
     transition-property: all;
     transition-timing-function: var(--tw-ease, var(--default-transition-timing-function));
     transition-duration: var(--tw-duration, var(--default-transition-duration));
+  }
+  .duration-200 {
+    --tw-duration: 200ms;
+    transition-duration: 200ms;
   }
   .duration-300 {
     --tw-duration: 300ms;

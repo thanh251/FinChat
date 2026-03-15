@@ -231,15 +231,20 @@ async function callGemini(
 ): Promise<APIResponse> {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`;
 
-  // Convert messages sang Gemini format
-  const contents = messages.map((m) => ({
-    role: m.role === 'assistant' ? 'model' : 'user',
-    parts: [
-      {
-        text: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
-      },
-    ],
-  }));
+  // Nếu messages đã ở dạng Gemini format (object[]) thì dùng luôn
+  // Nếu là ChatMessage[] thông thường thì convert
+  let contents: object[];
+
+  if (messages.length > 0 && 'parts' in (messages[0] as object)) {
+    // Đã là Gemini format rồi — dùng thẳng
+    contents = messages as unknown as object[];
+  } else {
+    // Convert từ ChatMessage sang Gemini format
+    contents = messages.map((m) => ({
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: typeof m.content === 'string' ? m.content : JSON.stringify(m.content) }],
+    }));
+  }
 
   const response = await fetch(url, {
     method: 'POST',
@@ -336,7 +341,8 @@ export function buildGeminiMessagesWithResults(
         functionResponse: {
           name: toolCalls[i]?.name ?? 'calculate',
           response: {
-            result: tr.isError ? `Lỗi: ${tr.result}` : `Kết quả chính xác: ${tr.result}`,
+            name: toolCalls[i]?.name ?? 'calculate',
+            content: tr.isError ? `Lỗi: ${tr.result}` : `Kết quả chính xác: ${tr.result}`,
           },
         },
       })),
