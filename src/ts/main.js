@@ -5,7 +5,7 @@
 // ═══════════════════════════════════════════
 import { safeEval, formatNumber } from './calculator.js';
 import { parseExcelFile, toMarkdownTable, renderTableHTML, getTableInfo } from './excel.js';
-import { callAI, buildClaudeMessagesWithResults, buildGeminiMessagesWithResults, SYSTEM_PROMPT, } from './api.js';
+import { callAI, buildClaudeMessagesWithResults, SYSTEM_PROMPT, } from './api.js';
 import { setPipelineStep, resetPipeline, completePipeline, addUserMessage, addBotMessage, addThinkingIndicator, removeThinkingIndicator, addToolCard, addErrorMessage, updateStats, autoResizeTextarea, setSendButtonState, } from './ui.js';
 // ═══════════════════════════════════════════
 // APP STATE
@@ -218,7 +218,15 @@ async function sendMessage() {
         let finalAnswer = '';
         const allCalcResults = [];
         let iterations = 0;
-        while (iterations < 5) {
+        // Tích lũy toàn bộ conversation history cho Gemini
+        // để tránh bị lặp lại tool calls cũ
+        const geminiHistory = [
+            { role: 'user', parts: [{ text: userPrompt }] }
+        ];
+        // Theo dõi các phép tính đã chạy để phát hiện vòng lặp
+        const seenEquations = new Set();
+        let stuckCount = 0;
+        while (iterations < 10) {
             iterations++;
             const response = await callAI(config, messages, SYSTEM_PROMPT);
             if (response.stopReason === 'end_turn') {
@@ -231,6 +239,32 @@ async function sendMessage() {
                 setPipelineStep(3, 'active');
                 const toolResults = [];
                 const newCalcResults = [];
+                // Kiểm tra có bị lặp không
+                const currentEquations = response.toolCalls.map(tc => tc.equation).join('|');
+                if (seenEquations.has(currentEquations)) {
+                    stuckCount++;
+                    // Nếu lặp 1 lần → ép kết luận ngay với kết quả đã có
+                    if (stuckCount >= 1) {
+                        removeThinkingIndicator();
+                        const summaryLines = allCalcResults
+                            .map(r => `${r.equation} = ${r.formatted}`)
+                            .join('\n');
+                        const forcePrompt = `${userPrompt}\n\n[Kết quả tính toán đã hoàn thành:\n${summaryLines}\n\nDựa vào CÁC KẾT QUẢ TRÊN, hãy viết câu trả lời cuối cùng ngay bây giờ. KHÔNG gọi thêm tool nào nữa.]`;
+                        // Reset history Gemini về prompt đơn giản — tránh function call loop
+                        geminiHistory.length = 0;
+                        geminiHistory.push({ role: 'user', parts: [{ text: forcePrompt }] });
+                        messages = [{ role: 'user', content: forcePrompt }];
+                        addThinkingIndicator('Đang tổng hợp kết quả...');
+                        state.totalCalls++;
+                        stuckCount = 0;
+                        seenEquations.clear();
+                        continue;
+                    }
+                }
+                else {
+                    seenEquations.add(currentEquations);
+                    stuckCount = 0;
+                }
                 for (const tc of response.toolCalls) {
                     try {
                         const result = safeEval(tc.equation);
@@ -256,14 +290,37 @@ async function sendMessage() {
                     messages = buildClaudeMessagesWithResults(userPrompt, response.rawContent, toolResults);
                 }
                 else if (state.provider === 'gemini') {
-                    messages = buildGeminiMessagesWithResults(userPrompt, response.toolCalls, toolResults);
+                    // Tích lũy toàn bộ history cho Gemini
+                    // thay vì chỉ gửi lần gọi cuối — tránh bị lặp lại
+                    geminiHistory.push({
+                        role: 'model',
+                        parts: response.toolCalls.map((tc) => ({
+                            functionCall: { name: tc.name, args: { equation: tc.equation } },
+                        })),
+                    });
+                    geminiHistory.push({
+                        role: 'user',
+                        parts: toolResults.map((tr, i) => ({
+                            functionResponse: {
+                                name: response.toolCalls[i]?.name ?? 'calculate',
+                                response: {
+                                    name: response.toolCalls[i]?.name ?? 'calculate',
+                                    content: tr.isError
+                                        ? `Lỗi: ${tr.result}`
+                                        : `Kết quả chính xác: ${tr.result}`,
+                                },
+                            },
+                        })),
+                    });
+                    messages = geminiHistory;
                 }
                 else {
-                    const resultSummary = toolResults
-                        .map((tr, i) => `${response.toolCalls[i]?.equation}: ${tr.result}`)
-                        .join(', ');
+                    // OpenAI — gửi tóm tắt tất cả kết quả đã tính
+                    const resultSummary = allCalcResults
+                        .map(r => `${r.equation} = ${r.formatted}`)
+                        .join('\n');
                     messages = [
-                        { role: 'user', content: `${userPrompt}\n\n[Kết quả tính toán chính xác: ${resultSummary}]` },
+                        { role: 'user', content: `${userPrompt}\n\n[Tất cả kết quả tính toán chính xác:\n${resultSummary}]` },
                     ];
                 }
                 setPipelineStep(4, 'active');
@@ -272,6 +329,22 @@ async function sendMessage() {
                 continue;
             }
             break;
+        }
+        // Nếu hết vòng lặp mà chưa có kết luận → ép kết luận từ kết quả đã có
+        if (!finalAnswer && allCalcResults.length > 0) {
+            removeThinkingIndicator();
+            addThinkingIndicator('Đang tổng hợp kết quả cuối...');
+            const summaryLines = allCalcResults
+                .map(r => `${r.equation} = ${r.formatted}`)
+                .join('\n');
+            const forcePrompt = `${userPrompt}\n\n[Kết quả tính toán:\n${summaryLines}\n\nViết câu trả lời ngắn gọn dựa trên các kết quả trên.]`;
+            const forceMessages = [{ role: 'user', content: forcePrompt }];
+            try {
+                const forceResponse = await callAI(config, forceMessages, SYSTEM_PROMPT);
+                finalAnswer = forceResponse.text;
+                state.totalCalls++;
+            }
+            catch (_) { /* ignore */ }
         }
         removeThinkingIndicator();
         if (finalAnswer) {

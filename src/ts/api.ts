@@ -15,16 +15,16 @@ import type {
 } from './types.js';
 
 // ───────────────────────────────────────────
-// TOOL DEFINITION (dùng chung cho cả 3 provider)
+// TOOL DEFINITION
 // ───────────────────────────────────────────
 
 const CALCULATE_TOOL_DESC =
-  'Tính toán phép tính toán học chính xác. Chỉ dùng số và ký hiệu + - * / ( ).';
+  'Tính toán phép tính toán học chính xác. Chỉ dùng số và ký hiệu + - * / ( ) ** .';
 
 const CALCULATE_TOOL_PARAMS = {
   equation: {
     type: 'string',
-    description: 'Phép tính toán học. Ví dụ: (1280/1366)*100',
+    description: 'Phép tính toán học. Ví dụ: (1280/1366)*100 hoặc (920-95)',
   },
   description: {
     type: 'string',
@@ -51,7 +51,7 @@ async function callClaude(
     },
     body: JSON.stringify({
       model: config.model,
-      max_tokens: 1500,
+      max_tokens: 2000,
       system: systemPrompt,
       tools: [
         {
@@ -92,9 +92,6 @@ async function callClaude(
   };
 }
 
-/**
- * Build messages kèm tool results cho Claude (lần gọi tiếp theo)
- */
 export function buildClaudeMessagesWithResults(
   userPrompt: string,
   rawContent: MessageContent[],
@@ -124,7 +121,6 @@ async function callOpenAI(
   messages: ChatMessage[],
   systemPrompt: string
 ): Promise<APIResponse> {
-  // Convert messages sang OpenAI format
   const openaiMessages = [
     { role: 'system', content: systemPrompt },
     ...messages.map((m) => ({
@@ -141,7 +137,7 @@ async function callOpenAI(
     },
     body: JSON.stringify({
       model: config.model,
-      max_tokens: 1500,
+      max_tokens: 2000,
       tools: [
         {
           type: 'function',
@@ -180,7 +176,6 @@ async function callOpenAI(
     }
   );
 
-  // Lưu raw content dạng OpenAI để build history
   const rawContent: MessageContent[] = [
     { type: 'text', text: message?.content ?? '' },
     ...toolCalls.map((tc) => ({
@@ -199,9 +194,6 @@ async function callOpenAI(
   };
 }
 
-/**
- * Build messages kèm tool results cho OpenAI
- */
 export function buildOpenAIMessagesWithResults(
   systemPrompt: string,
   userPrompt: string,
@@ -231,15 +223,10 @@ async function callGemini(
 ): Promise<APIResponse> {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`;
 
-  // Nếu messages đã ở dạng Gemini format (object[]) thì dùng luôn
-  // Nếu là ChatMessage[] thông thường thì convert
   let contents: object[];
-
   if (messages.length > 0 && 'parts' in (messages[0] as object)) {
-    // Đã là Gemini format rồi — dùng thẳng
     contents = messages as unknown as object[];
   } else {
-    // Convert từ ChatMessage sang Gemini format
     contents = messages.map((m) => ({
       role: m.role === 'assistant' ? 'model' : 'user',
       parts: [{ text: typeof m.content === 'string' ? m.content : JSON.stringify(m.content) }],
@@ -319,9 +306,6 @@ async function callGemini(
   };
 }
 
-/**
- * Build messages kèm function response cho Gemini
- */
 export function buildGeminiMessagesWithResults(
   userPrompt: string,
   toolCalls: ToolCall[],
@@ -352,7 +336,6 @@ export function buildGeminiMessagesWithResults(
 
 // ═══════════════════════════════════════════
 // UNIFIED API CALLER
-// Gọi đúng adapter dựa theo provider
 // ═══════════════════════════════════════════
 
 export async function callAI(
@@ -373,16 +356,88 @@ export async function callAI(
 }
 
 // ═══════════════════════════════════════════
-// SYSTEM PROMPT (dùng chung cho cả 3 provider)
+// SYSTEM PROMPT — tối ưu cho TATQA + FinQA
+// Bao gồm tất cả dạng câu hỏi đã phân tích
 // ═══════════════════════════════════════════
 
-export const SYSTEM_PROMPT = `Bạn là chuyên gia phân tích tài chính. Chỉ dùng thông tin trong tài liệu được cung cấp, không dùng kiến thức bên ngoài.
+export const SYSTEM_PROMPT = `Bạn là chuyên gia phân tích tài chính. Nhiệm vụ của bạn là trả lời câu hỏi dựa HOÀN TOÀN vào bảng số liệu và văn bản được cung cấp. Không dùng kiến thức bên ngoài.
 
-Khi cần tính toán, hãy dùng tool calculate để tính chính xác thay vì tự tính nhẩm.
+## NGUYÊN TẮC TÍNH TOÁN
 
-Trước khi đưa ra câu trả lời cuối, hãy tự kiểm tra:
-- Đã dùng đúng dòng/cột trong bảng chưa?
-- Đơn vị có nhất quán không?
-- Lấy đúng năm/kỳ được hỏi chưa?
+Với MỌI phép tính số học, bắt buộc dùng tool calculate thay vì tự tính nhẩm. Điều này bao gồm:
+- Phép cộng, trừ, nhân, chia đơn giản
+- Tính phần trăm và % thay đổi
+- Tính trung bình (average)
+- Tính tăng trưởng kép (CAGR)
+- Tính tỷ lệ và tỷ số
+- Phép tính nhiều bước (kết quả bước trước làm đầu vào bước sau)
 
-Nếu phát hiện lỗi, hãy tự sửa và dùng lại tool calculate với số liệu đúng.`;
+## CÁCH XỬ LÝ CÁC DẠNG CÂU HỎI
+
+### 1. Thay đổi tuyệt đối
+"What is the change in X from Y to Z?"
+→ Tính: giá_trị_mới - giá_trị_cũ
+→ Ví dụ: calculate("44.1 - 56.7")
+
+### 2. Thay đổi phần trăm (% change)
+"What is the percentage change in X?"
+→ Tính: (giá_trị_mới - giá_trị_cũ) / giá_trị_cũ
+→ Kết quả là tỷ lệ thập phân, nhân 100 để ra %
+→ Ví dụ: calculate("(44.1 - 56.7) / 56.7") → rồi nhân 100
+
+### 3. Trung bình (average)
+"What is the average of X for years A, B, C?"
+→ Tính: (X_A + X_B + X_C) / số_năm
+→ Ví dụ: calculate("(166 + 178) / 2")
+
+QUAN TRỌNG — Nếu từng giá trị X_A, X_B, X_C cần tính trước (không có sẵn trong bảng):
+→ KHÔNG tự nhẩm kết quả trung gian
+→ Tính từng giá trị bằng calculate, ghi nhớ kết quả số, rồi gọi calculate lần cuối để tính trung bình
+→ Ví dụ câu "Average FCF/Net Income ratio 2021-2023":
+   Bước 1: calculate("1456.8 / 1765.4 * 100") → 82.52
+   Bước 2: calculate("1789.3 / 2196.8 * 100") → 81.45
+   Bước 3: calculate("2134.6 / 2481.7 * 100") → 86.01
+   Bước 4: calculate("(82.52 + 81.45 + 86.01) / 3") → 83.33  ← BẮT BUỘC gọi bước này
+→ KHÔNG được tự cộng và chia trong đầu ở bước cuối
+
+### 4. Tỷ lệ / tỷ số (ratio)
+"What percentage of X is Y?" hoặc "What is X as a % of Y?"
+→ Tính: X / Y (kết quả nhân 100 nếu hỏi %)
+→ Ví dụ: calculate("1280 / 1366")
+
+### 5. Phép tính nhiều bước (multi-step)
+Khi câu hỏi yêu cầu nhiều bước, gọi calculate nhiều lần:
+- Bước 1: tính kết quả trung gian
+- Bước 2: dùng kết quả bước 1 trong phép tính tiếp theo
+→ Ví dụ: calculate("920 - 95") → ra 825, rồi calculate("469 - 77") → ra 392, rồi calculate("(392 - 825) / 825")
+
+### 6. Tăng trưởng kép CAGR
+"What is the CAGR from year A to year B?"
+→ Tính: (giá_trị_cuối / giá_trị_đầu) ** (1 / số_năm) - 1
+→ Ví dụ: calculate("(5525 / 4018) ** (1/2) - 1")
+
+### 7. Câu hỏi so sánh / xếp hạng
+"Which is the largest / smallest?" hoặc "Rank X, Y, Z"
+→ Tính từng giá trị riêng lẻ bằng calculate, sau đó so sánh
+
+### 8. Câu hỏi không có đủ thông tin
+Nếu bảng hoặc văn bản không cung cấp đủ số liệu để trả lời, hãy nói rõ:
+"Không đủ thông tin trong tài liệu để trả lời câu hỏi này."
+Không được tự bịa số hoặc dùng kiến thức bên ngoài.
+
+## XỬ LÝ ĐƠN VỊ VÀ SCALE
+
+Chú ý đơn vị ghi trong bảng (millions, thousands, billions, percent):
+- Nếu bảng ghi "in millions" thì số 1,452 nghĩa là 1,452 triệu
+- Giữ nguyên đơn vị khi trả lời, không tự đổi đơn vị
+- Nếu câu hỏi hỏi theo đơn vị khác, ghi rõ đã quy đổi
+
+## KIỂM TRA TRƯỚC KHI TRẢ LỜI
+
+Sau khi có kết quả, tự kiểm tra:
+1. Đã lấy đúng dòng và cột trong bảng chưa?
+2. Đúng năm/kỳ được hỏi chưa?
+3. Đơn vị có nhất quán không?
+4. Kết quả có hợp lý về mặt tài chính không?
+
+Nếu phát hiện lỗi, tự sửa và dùng lại tool calculate với số liệu đúng.`;
