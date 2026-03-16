@@ -36,7 +36,7 @@ import {
 const state: AppState = {
   provider: 'gemini',              // dùng Gemini
   apiKey: '',
-  model: 'gemini-2.5-flash',       // model Gemini
+  model: 'gemini-2.5-flash-lite',       // model Gemini
   totalCalls: 0,
   totalCalcs: 0,
   totalQuestions: 0,
@@ -46,6 +46,9 @@ const state: AppState = {
 
 // Trạng thái API key đã được xác nhận bằng Enter chưa
 let apiKeyConfirmed = false;
+
+// Các sheet đang được chọn (hỗ trợ multi-select)
+let selectedSheets: Set<string> = new Set();
 
 // ═══════════════════════════════════════════
 // API KEY — validate + xác nhận bằng Enter
@@ -171,41 +174,118 @@ function processFile(file: File): void {
 function renderSheetTabs(sheets: string[]): void {
   const wrap = document.getElementById('sheet-tabs')!;
   wrap.innerHTML = '';
+  selectedSheets.clear();
 
   if (sheets.length > 1) {
     document.getElementById('sheet-selector')?.classList.remove('hidden');
+
     sheets.forEach((name) => {
       const btn = document.createElement('button');
       btn.className = 'sheet-tab text-xs font-mono px-2.5 py-1 rounded-lg';
       btn.textContent = name;
       btn.id = `tab-${name}`;
-      btn.addEventListener('click', () => selectSheet(name));
+      btn.addEventListener('click', () => toggleSheet(name));
       wrap.appendChild(btn);
     });
+
+    // Nút chọn tất cả
+    document.getElementById('select-all-sheets-btn')?.addEventListener('click', () => {
+      const allSelected = selectedSheets.size === sheets.length;
+      if (allSelected) {
+        // Bỏ chọn tất cả, chỉ giữ sheet đầu tiên
+        selectedSheets.clear();
+        toggleSheet(sheets[0]);
+      } else {
+        // Chọn tất cả
+        sheets.forEach(s => selectedSheets.add(s));
+        updateSheetTabStyles();
+        renderMergedPreview();
+      }
+    });
+
+    // Mặc định chọn sheet đầu tiên
+    toggleSheet(sheets[0]);
+
   } else {
     document.getElementById('sheet-selector')?.classList.add('hidden');
+    if (sheets.length === 1) {
+      selectedSheets.add(sheets[0]);
+      selectSheet(sheets[0]);
+    }
+  }
+}
+
+function toggleSheet(name: string): void {
+  if (selectedSheets.has(name)) {
+    // Không cho bỏ chọn nếu chỉ còn 1 sheet
+    if (selectedSheets.size <= 1) return;
+    selectedSheets.delete(name);
+  } else {
+    selectedSheets.add(name);
+  }
+  updateSheetTabStyles();
+  renderMergedPreview();
+}
+
+function updateSheetTabStyles(): void {
+  if (!state.excelData) return;
+  const sheets = Object.keys(state.excelData.sheets);
+  sheets.forEach(name => {
+    const tab = document.getElementById(`tab-${name}`);
+    if (!tab) return;
+    if (selectedSheets.has(name)) {
+      tab.className = 'sheet-tab selected text-xs font-mono px-2.5 py-1 rounded-lg';
+    } else {
+      tab.className = 'sheet-tab text-xs font-mono px-2.5 py-1 rounded-lg';
+    }
+  });
+
+  // Cập nhật info text
+  const info = document.getElementById('selected-sheets-info');
+  if (info) {
+    info.textContent = `${selectedSheets.size} sheet được chọn: ${Array.from(selectedSheets).join(', ')}`;
+  }
+}
+
+function renderMergedPreview(): void {
+  if (!state.excelData) return;
+  const container = document.getElementById('table-container')!;
+  const info = document.getElementById('table-info')!;
+
+  if (selectedSheets.size === 1) {
+    const name = Array.from(selectedSheets)[0];
+    const rows = state.excelData.sheets[name] ?? [];
+    container.innerHTML = renderTableHTML(rows);
+    info.textContent = `[${name}] ${getTableInfo(rows)}`;
+  } else {
+    // Hiển thị preview gộp — chỉ show tên sheet và số dòng
+    let html = '';
+    let totalRows = 0;
+    Array.from(selectedSheets).forEach(name => {
+      const rows = state.excelData!.sheets[name] ?? [];
+      totalRows += rows.length;
+      html += `<div class="px-3 py-1.5 bg-blue-50 border-b border-blue-100 text-xs font-mono text-blue-600 font-medium">📋 ${name} (${rows.length} hàng)</div>`;
+      html += renderTableHTML(rows.slice(0, 5));
+      if (rows.length > 5) {
+        html += `<div class="px-3 py-1 text-xs text-blue-300 font-mono italic">... và ${rows.length - 5} hàng nữa</div>`;
+      }
+    });
+    container.innerHTML = html;
+    info.textContent = `${selectedSheets.size} sheets · ${totalRows} hàng tổng cộng`;
   }
 }
 
 function selectSheet(name: string): void {
   if (!state.excelData) return;
   state.excelData.activeSheet = name;
-
-  document.querySelectorAll('.sheet-tab').forEach((t) => t.classList.remove('active'));
-  document.getElementById(`tab-${name}`)?.classList.add('active');
-
-  const rows = state.excelData.sheets[name];
-  if (!rows) return;
-
-  const container = document.getElementById('table-container')!;
-  container.innerHTML = renderTableHTML(rows);
-
-  const info = document.getElementById('table-info')!;
-  info.textContent = getTableInfo(rows);
+  selectedSheets.add(name);
+  updateSheetTabStyles();
+  renderMergedPreview();
 }
 
 function clearExcel(): void {
   state.excelData = null;
+  selectedSheets.clear();
   document.getElementById('table-preview')?.classList.add('hidden');
   document.getElementById('table-text-wrap')?.classList.remove('hidden');
   document.getElementById('sheet-selector')?.classList.add('hidden');
@@ -230,11 +310,27 @@ async function sendMessage(): Promise<void> {
 
   if (!question) return;
 
-  // Build context
+  // Build context — gộp tất cả sheets được chọn
   const textContext = textInput.value.trim();
-  const tableContext = state.excelData
-    ? toMarkdownTable(state.excelData.sheets[state.excelData.activeSheet] ?? [])
-    : tableInput.value.trim();
+  let tableContext = '';
+
+  if (state.excelData && selectedSheets.size > 0) {
+    if (selectedSheets.size === 1) {
+      // 1 sheet — như cũ
+      const sheetName = Array.from(selectedSheets)[0];
+      tableContext = toMarkdownTable(state.excelData.sheets[sheetName] ?? []);
+    } else {
+      // Nhiều sheet — gộp với tiêu đề phân cách
+      const parts: string[] = [];
+      Array.from(selectedSheets).forEach(name => {
+        const rows = state.excelData!.sheets[name] ?? [];
+        parts.push(`### Sheet: ${name}\n${toMarkdownTable(rows)}`);
+      });
+      tableContext = parts.join('\n\n');
+    }
+  } else if (!state.excelData) {
+    tableContext = tableInput.value.trim();
+  }
 
   const context = [
     textContext ? `Văn bản:\n${textContext}` : '',

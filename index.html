@@ -32,8 +32,9 @@
   .drop-active{border-color:#2563eb!important;background:#eff6ff!important}
   .sheet-tab{transition:all .15s;cursor:pointer}
   .sheet-tab.active{background:#2563eb;color:white}
-  .sheet-tab:not(.active){background:#dbeafe;color:#1e40af}
-  .sheet-tab:not(.active):hover{background:#bfdbfe}
+  .sheet-tab.selected{background:#1d4ed8;color:white;ring:2px solid #93c5fd}
+  .sheet-tab:not(.active):not(.selected){background:#dbeafe;color:#1e40af}
+  .sheet-tab:not(.active):not(.selected):hover{background:#bfdbfe}
   .excel-table{border-collapse:collapse;width:100%;font-size:11.5px}
   .excel-table th{background:#dbeafe;color:#1e40af;padding:5px 10px;text-align:left;border:1px solid #bfdbfe;font-weight:500;white-space:nowrap}
   .excel-table td{padding:4px 10px;border:1px solid #e0eaff;color:#374151;white-space:nowrap}
@@ -89,8 +90,12 @@
       </div>
 
       <div id="sheet-selector" class="hidden mb-2">
-        <p class="text-xs text-blue-400 font-mono mb-1.5">Chọn sheet:</p>
+        <div class="flex items-center justify-between mb-1.5">
+          <p class="text-xs text-blue-400 font-mono">Chọn sheet (nhiều sheet):</p>
+          <button id="select-all-sheets-btn" class="text-xs font-mono text-blue-500 hover:text-blue-700">Chọn tất cả</button>
+        </div>
         <div id="sheet-tabs" class="flex flex-wrap gap-1"></div>
+        <p id="selected-sheets-info" class="text-xs text-blue-300 font-mono mt-1"></p>
       </div>
 
       <div id="table-preview" class="hidden">
